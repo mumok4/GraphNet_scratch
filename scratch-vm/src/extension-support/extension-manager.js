@@ -20,7 +20,7 @@ const builtinExtensions = {
     makeymakey: () => require('../extensions/scratch3_makeymakey'),
     boost: () => require('../extensions/scratch3_boost'),
     gdxfor: () => require('../extensions/scratch3_gdx_for'),
-    scratch3neuralnet: () => require('../extensions/scratch3_neural_net')
+    scratch3neuralnet: () => require('../extensions/scratch3neuralnet')
 };
 
 /**
