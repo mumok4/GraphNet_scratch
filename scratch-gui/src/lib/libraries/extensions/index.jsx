@@ -46,6 +46,10 @@ import gdxforInsetIconURL from './gdxfor/gdxfor-small.svg';
 import gdxforConnectionIconURL from './gdxfor/gdxfor-illustration.svg';
 import gdxforConnectionSmallIconURL from './gdxfor/gdxfor-small.svg';
 
+import neuralNetIconURL from './scratch3neuralnet/neuralnet.png';
+import neuralNetInsetIconURL from './scratch3neuralnet/neuralnet.png';
+
+
 export default [
     {
         name: (
@@ -321,19 +325,19 @@ export default [
     {
         name: (
             <FormattedMessage
-                defaultMessage="Нейросеть"
-                description="Name for Neural Net extension"
+                defaultMessage="Машинное обучение"
+                description="Name for the Machine Learning extension"
                 id="gui.extension.neuralnet.name"
             />
         ),
         extensionId: 'scratch3neuralnet',
         collaborator: 'Mumok4',
-        connectionIconURL: gdxforConnectionIconURL,
-        connectionSmallIconURL: gdxforConnectionSmallIconURL,
+        iconURL: neuralNetIconURL,
+        insetIconURL: neuralNetInsetIconURL,
         description: (
             <FormattedMessage
-                defaultMessage="Загрузка TF.js моделей и предсказание по костюмам."
-                description="Description for Neural Net extension"
+                defaultMessage="Обучите компьютер распознавать образы."
+                description="Description for the Machine Learning extension"
                 id="gui.extension.neuralnet.description"
             />
         ),

@@ -53,7 +53,7 @@
     "statements": 70
   },
   "dependencies": {
-    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs": "4.17.0",
     "@vernier/godirect": "^1.5.0",
     "arraybuffer-loader": "^1.0.6",
     "atob": "^2.1.2",
@@ -66,6 +66,7 @@
     "htmlparser2": "^3.10.0",
     "immutable": "^3.8.1",
     "jszip": "^3.1.5",
+    "lodash.bindall": "^4.4.0",
     "minilog": "^3.1.0",
     "scratch-audio": "^2.0.0",
     "scratch-parser": "^6.0.0",
