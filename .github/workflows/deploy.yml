@@ -19,13 +19,13 @@ jobs:
       - name: Install and Link VM ⛓️
         run: |
           cd scratch-vm
-          npm install
+          npm install --ignore-scripts
           npm link
 
       - name: Install, Link GUI and Build 🛠️
         run: |
           cd scratch-gui
-          npm install
+          npm install --ignore-scripts
           npm link scratch-vm
           npm run build
 
