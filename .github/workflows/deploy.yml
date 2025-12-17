@@ -8,21 +8,22 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout 🛎️
+      - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Setup Node.js ⚙️
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '20'
 
-      - name: Install, Link GUI and Build 🛠️
+      - name: Install and Link
         env:
           HUSKY: 0
         run: |
           cd scratch-gui
           npm install --ignore-scripts
-          npm run build:microbit-hex
+          mkdir -p src/generated
+          echo "module.exports = require('./../../static/microbit/scratch-microbit-1.2.0.hex');" > src/generated/microbit-hex-url.cjs
           cd ../scratch-vm
           npm install --ignore-scripts
           npm link
@@ -30,7 +31,7 @@ jobs:
           npm link scratch-vm
           npm run build
 
-      - name: Deploy 🚀
+      - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
