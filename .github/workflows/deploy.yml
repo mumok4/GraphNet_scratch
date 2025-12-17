@@ -21,11 +21,9 @@ jobs:
           HUSKY: 0
         run: |
           cd scratch-gui
-          npm install --ignore-scripts
-          mkdir -p src/generated
-          echo "module.exports = require('./../../static/microbit/scratch-microbit-1.2.0.hex');" > src/generated/microbit-hex-url.cjs
+          npm install
           cd ../scratch-vm
-          npm install --ignore-scripts
+          npm install
           npm link
           cd ../scratch-gui
           npm link scratch-vm
