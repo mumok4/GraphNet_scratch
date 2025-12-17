@@ -30,6 +30,7 @@ jobs:
         run: |
           cd scratch-gui
           npm install --ignore-scripts
+          npm run prepare
           npm link scratch-vm
           npm run build
 
