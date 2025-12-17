@@ -16,21 +16,16 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install and Link VM ⛓️
-        env:
-          HUSKY: 0
-        run: |
-          cd scratch-vm
-          npm install --ignore-scripts
-          npm link
-
       - name: Install, Link GUI and Build 🛠️
         env:
           HUSKY: 0
         run: |
           cd scratch-gui
           npm install --ignore-scripts
-          npm run prepare
+          cd ../scratch-vm
+          npm install --ignore-scripts
+          npm link
+          cd ../scratch-gui
           npm link scratch-vm
           npm run build
 
