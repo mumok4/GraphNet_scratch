@@ -22,6 +22,7 @@ jobs:
         run: |
           cd scratch-gui
           npm install --ignore-scripts
+          npm run build:microbit-hex
           cd ../scratch-vm
           npm install --ignore-scripts
           npm link
