@@ -779,8 +779,9 @@ class Scratch3NeuralNet {
                     console.error('[Extension] Ошибка загрузки модели:', err);
                     
                     // Убираем окно загрузки
-                    const loadingAlertToRemove = document.querySelector('div[style*="position:fixed"]');
-                    if (loadingAlertToRemove) document.body.removeChild(loadingAlertToRemove);
+                    if (loadingAlert && document.body.contains(loadingAlert)) {
+                        document.body.removeChild(loadingAlert);
+                    }
                     
                     alert('Ошибка загрузки модели: ' + err.message);
                     this.isModelLoaded = false;
