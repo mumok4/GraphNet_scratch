@@ -83,7 +83,6 @@ self.onmessage = async (event) => {
                     topology.config.layers.forEach((layer, idx) => {
                         console.log(\`[Worker] Обработка слоя \${idx + 1}/\${topology.config.layers.length}: \${layer.class_name}\`);
                         
-                        // Удаляем избыточные поля для ускорения
                         if (layer.config) {
                             delete layer.config.dtype;
                             delete layer.config.kernel_initializer;
@@ -116,15 +115,12 @@ self.onmessage = async (event) => {
                                         if (Array.isArray(args) && args.length > 0) {
                                             const firstArg = args[0];
                                             
-                                            // Проверяем структуру первого аргумента
                                             if (firstArg && typeof firstArg === 'object') {
                                                 if ('config' in firstArg && 'keras_history' in firstArg.config) {
-                                                    // Формат: {class_name, config: {keras_history: [...]}}
                                                     const history = firstArg.config.keras_history;
                                                     console.log(\`[Worker]   -> Найден keras_history в config: [\${history.join(', ')}]\`);
                                                     return [[history[0], history[1], history[2]]];
                                                 } else if ('keras_history' in firstArg) {
-                                                    // Формат: {keras_history: [...]}
                                                     const history = firstArg.keras_history;
                                                     console.log(\`[Worker]   -> Найден прямой keras_history: [\${history.join(', ')}]\`);
                                                     return [[history[0], history[1], history[2]]];
@@ -157,13 +153,11 @@ self.onmessage = async (event) => {
                 weightData: payload.weightsBuffer,
             };
             console.log('[Worker] Количество весовых спецификаций:', modelArtifacts.weightSpecs.length);
-            console.log('[Worker] Структура modelTopology:', JSON.stringify(topology, null, 2).substring(0, 500) + '...');
             
             let progressTimeout;
             let lastProgressUpdate = 0;
             const progressCallback = (fraction) => {
                 const now = performance.now();
-                // Логируем только каждые 500мс чтобы не спамить
                 if (now - lastProgressUpdate > 500 || fraction >= 1) {
                     console.log(\`[Worker] Прогресс загрузки: \${(fraction * 100).toFixed(1)}%\`);
                     lastProgressUpdate = now;
@@ -176,32 +170,13 @@ self.onmessage = async (event) => {
                         type: 'error',
                         payload: 'Ошибка: Загрузка модели зависла (возможно нехватка видеопамяти).'
                     });
-                }, 20000); // Увеличено до 20 секунд
+                }, 20000);
             };
             
             try {
                 const loadStart = performance.now();
                 console.log('[Worker] Загрузка модели в TensorFlow.js...');
                 
-                // Удаляем training_config - он не нужен для инференса
-                const cleanedJson = {
-                    format: 'layers-model',
-                    generatedBy: 'keras',
-                    convertedBy: 'custom',
-                    modelTopology: topology,
-                    weightsManifest: [{
-                        paths: ['weights.bin'],
-                        weights: modelArtifacts.weightSpecs
-                    }]
-                };
-                
-                console.log('[Worker] Попытка прямой загрузки через tf.loadLayersModel...');
-                console.log('[Worker] Проверка топологии перед загрузкой...');
-                console.log('[Worker] - class_name:', topology.class_name);
-                console.log('[Worker] - backend:', topology.backend);
-                console.log('[Worker] - keras_version:', topology.keras_version);
-                
-                // Попытка 1: Прямая загрузка
                 const ioHandler = {
                     load: async () => {
                         console.log('[Worker] IOHandler.load() вызван');
@@ -219,21 +194,18 @@ self.onmessage = async (event) => {
                 try {
                     model = await tf.loadLayersModel(ioHandler, { 
                         onProgress: progressCallback,
-                        strict: false  // Отключаем строгую проверку
+                        strict: false
                     });
                     console.log('[Worker] Модель загружена успешно!');
                 } catch (loadError) {
                     console.error('[Worker] Ошибка при первой попытке загрузки:', loadError.toString());
                     
-                    // Попытка 2: Используем Sequential модель вместо Functional
                     console.log('[Worker] Попытка создания модели вручную через Sequential API...');
                     
                     try {
-                        // Создаем модель вручную по слоям
                         const layers = topology.config.layers;
                         console.log('[Worker] Создание слоев вручную, всего слоев:', layers.length);
                         
-                        // Функция для конвертации snake_case в camelCase
                         const snakeToCamel = (str) => str.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
                         
                         const convertConfig = (config) => {
@@ -243,18 +215,14 @@ self.onmessage = async (event) => {
                                     const camelKey = snakeToCamel(key);
                                     let value = config[key];
                                     
-                                    // Конвертируем специальные строковые значения
                                     if (typeof value === 'string') {
-                                        // Конвертируем значения вроде 'channels_last' в 'channelsLast'
                                         if (value.includes('_')) {
                                             value = snakeToCamel(value);
                                         }
-                                        // Специальные значения padding
                                         if (key === 'padding' && value === 'valid') {
-                                            value = 'valid'; // оставляем как есть
+                                            value = 'valid';
                                         }
                                     }
-                                    // Рекурсивно конвертируем вложенные объекты
                                     else if (value && typeof value === 'object' && !Array.isArray(value)) {
                                         value = convertConfig(value);
                                     }
@@ -267,19 +235,16 @@ self.onmessage = async (event) => {
                         
                         const tfLayers = [];
                         
-                        for (let i = 1; i < layers.length; i++) { // Пропускаем InputLayer
+                        for (let i = 1; i < layers.length; i++) {
                             const layer = layers[i];
                             console.log(\`[Worker] Создание слоя \${i}: \${layer.class_name}\`);
                             
-                            // Конвертируем конфигурацию из snake_case в camelCase
                             let config = convertConfig(layer.config);
                             
                             if (i === 1) {
-                                // Первый слой должен иметь inputShape
-                                config.inputShape = [32, 32, 3];
+                                config.inputShape = [28, 28, 3];
                             }
                             
-                            // Удаляем поля которые не нужны для создания слоя
                             delete config.name;
                             delete config.trainable;
                             
@@ -311,13 +276,10 @@ self.onmessage = async (event) => {
                         model = tf.sequential({ layers: tfLayers });
                         
                         console.log('[Worker] Загрузка весов в модель...');
-                        console.log('[Worker] Распаковка весов из буфера...');
                         
-                        // Декодируем веса из ArrayBuffer
                         const weightsData = new Float32Array(payload.weightsBuffer);
                         console.log('[Worker] Всего весов (float32):', weightsData.length);
                         
-                        // Разбиваем веса по слоям согласно weightSpecs
                         const weights = [];
                         let offset = 0;
                         
@@ -348,11 +310,10 @@ self.onmessage = async (event) => {
                 clearTimeout(progressTimeout);
                 console.log(\`[Worker] Модель загружена в TF.js за \${(performance.now() - loadStart).toFixed(0)}ms\`);
                 
-                // Пробный прогон для инициализации
                 const inputShape = model.inputs[0].shape;
                 console.log('[Worker] Входная форма:', inputShape);
                 console.log('[Worker] Выполнение пробного прогона...');
-                const dummyInput = tf.zeros([1, inputShape[1] || 32, inputShape[2] || 32, inputShape[3] || 3]);
+                const dummyInput = tf.zeros([1, inputShape[1] || 28, inputShape[2] || 28, inputShape[3] || 3]);
                 const dummyOutput = model.predict(dummyInput);
                 console.log('[Worker] Форма выхода:', dummyOutput.shape);
                 dummyInput.dispose();
@@ -366,7 +327,6 @@ self.onmessage = async (event) => {
                 console.error('[Worker] toString:', error.toString());
                 console.error('[Worker] Stack trace:', error.stack);
                 
-                // Пытаемся понять проблему
                 if (error.message && error.message.includes('Cannot read')) {
                     console.error('[Worker] ДИАГНОСТИКА: Проблема с чтением структуры модели');
                     console.error('[Worker] modelTopology.class_name:', topology?.class_name);
@@ -384,8 +344,8 @@ self.onmessage = async (event) => {
                 id: id, 
                 type: 'modelLoaded', 
                 payload: { 
-                    height: inputShape[1] || 224,
-                    width: inputShape[2] || 224
+                    height: inputShape[1] || 28,
+                    width: inputShape[2] || 28
                 } 
             });
             console.log('[Worker] Сообщение modelLoaded отправлено');
@@ -399,14 +359,81 @@ self.onmessage = async (event) => {
             }
             
             const { imageData, width, height } = payload;
-            console.log(\`[Worker] Размер изображения: \${width}x\${height}, пикселей: \${imageData.length / 4}\`);
+            console.log(\`[Worker] Размер изображения: \${width}x\${height}\`);
+            console.log(\`[Worker] Тип imageData: \${imageData.constructor.name}\`);
+            console.log(\`[Worker] Длина imageData: \${imageData.length}\`);
+            console.log(\`[Worker] Первые 20 значений:\`, Array.from(imageData.slice(0, 20)));
+            
+            if (!imageData || imageData.length === 0) {
+                console.error('[Worker] imageData пуст!');
+                throw new Error('Пустые данные изображения');
+            }
+            
+            const expectedLength = width * height * 4;
+            if (imageData.length !== expectedLength) {
+                console.error(\`[Worker] Неверная длина imageData: ожидалось \${expectedLength}, получено \${imageData.length}\`);
+                throw new Error(\`Неверный размер данных изображения\`);
+            }
+            
+            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Определяем количество каналов из формы модели
+            const inputShape = model.inputs[0].shape;
+            const expectedChannels = inputShape[3] || 3;
+            console.log('[Worker] Входная форма модели:', inputShape);
+            console.log('[Worker] Ожидаемое количество каналов:', expectedChannels);
+            
+            // Статистика входных данных
+            let nonZeroCount = 0;
+            for (let i = 0; i < imageData.length; i += 4) {
+                if (imageData[i] > 0 || imageData[i+1] > 0 || imageData[i+2] > 0) nonZeroCount++;
+            }
+            console.log(\`[Worker] Не-чёрных пикселей во входных данных: \${nonZeroCount}/\${imageData.length/4}\`);
             
             const tensorStart = performance.now();
             const tensor = tf.tidy(() => {
-                const imgTensor = tf.tensor3d(imageData, [height, width, 4])
-                                    .slice([0, 0, 0], [height, width, 3]);
+                const uint8Array = new Uint8Array(imageData);
+                console.log('[Worker] Создание тензора из uint8Array...');
                 
-                return imgTensor.toFloat().div(255.0).expandDims(0);
+                // Создаём тензор из RGBA данных
+                const imgTensor = tf.tensor3d(uint8Array, [height, width, 4]);
+                
+                // В зависимости от требуемых каналов, обрабатываем по-разному
+                let processedTensor;
+                if (expectedChannels === 1) {
+                    console.log('[Worker] Конвертация в GRAYSCALE (1 канал)');
+                    // Берём только RGB каналы и конвертируем в grayscale
+                    const rgb = imgTensor.slice([0, 0, 0], [height, width, 3]);
+                    // Формула grayscale: 0.299*R + 0.587*G + 0.114*B
+                    const r = rgb.slice([0, 0, 0], [height, width, 1]);
+                    const g = rgb.slice([0, 0, 1], [height, width, 1]);
+                    const b = rgb.slice([0, 0, 2], [height, width, 1]);
+                    processedTensor = r.mul(0.299).add(g.mul(0.587)).add(b.mul(0.114));
+                } else if (expectedChannels === 3) {
+                    console.log('[Worker] Используем RGB (3 канала)');
+                    processedTensor = imgTensor.slice([0, 0, 0], [height, width, 3]);
+                } else if (expectedChannels === 4) {
+                    console.log('[Worker] Используем RGBA (4 канала)');
+                    processedTensor = imgTensor;
+                } else {
+                    console.warn(\`[Worker] Неожиданное количество каналов: \${expectedChannels}, используем RGB\`);
+                    processedTensor = imgTensor.slice([0, 0, 0], [height, width, 3]);
+                }
+                
+                const normalized = processedTensor.toFloat().div(255.0);
+                const batched = normalized.expandDims(0);
+                
+                console.log('[Worker] Форма итогового тензора:', batched.shape);
+                
+                // Логируем статистику тензора
+                const tensorData = batched.dataSync();
+                const nonZeroTensor = tensorData.filter(v => v > 0.01).length;
+                const avgValue = tensorData.reduce((a, b) => a + b, 0) / tensorData.length;
+                const maxValue = Math.max(...tensorData);
+                const minValue = Math.min(...tensorData);
+                console.log(\`[Worker] Статистика тензора:\`);
+                console.log(\`[Worker]   Ненулевых значений: \${nonZeroTensor}/\${tensorData.length}\`);
+                console.log(\`[Worker]   Среднее: \${avgValue.toFixed(4)}, Мин: \${minValue.toFixed(4)}, Макс: \${maxValue.toFixed(4)}\`);
+                
+                return batched;
             });
             console.log(\`[Worker] Тензор создан за \${(performance.now() - tensorStart).toFixed(0)}ms, форма: \${tensor.shape}\`);
             
@@ -415,6 +442,16 @@ self.onmessage = async (event) => {
             const prediction = model.predict(tensor);
             const probsData = await prediction.data();
             console.log(\`[Worker] Предсказание завершено за \${(performance.now() - predictStart).toFixed(0)}ms, классов: \${probsData.length}\`);
+            
+            // Детальная информация о предсказании
+            const sortedProbs = Array.from(probsData)
+                .map((p, i) => ({class: i + 1, prob: p}))
+                .sort((a, b) => b.prob - a.prob);
+            
+            console.log('[Worker] ТОП-3 предсказания:');
+            sortedProbs.slice(0, 3).forEach((item, idx) => {
+                console.log(\`[Worker]   \${idx + 1}. Класс \${item.class}: \${(item.prob * 100).toFixed(2)}%\`);
+            });
             
             tensor.dispose();
             prediction.dispose();
@@ -431,7 +468,6 @@ self.onmessage = async (event) => {
         console.error('[Worker] Ошибка:', error.message || error.toString());
         console.error('[Worker] Stack:', error.stack);
         
-        // Формируем понятное сообщение об ошибке
         let errorMessage = 'Неизвестная ошибка воркера';
         if (error.message) {
             errorMessage = error.message;
@@ -478,13 +514,11 @@ class Scratch3NeuralNet {
         console.log('[Extension] Инициализация Neural Net Extension...');
         
         try {
-            // Create worker from inline code
             console.log('[Extension] Создание Worker...');
             const blob = new Blob([workerCode], { type: 'application/javascript' });
             const workerUrl = URL.createObjectURL(blob);
             this.worker = new Worker(workerUrl);
             
-            // Clean up blob URL after worker is created
             URL.revokeObjectURL(workerUrl);
             console.log('[Extension] Worker создан успешно');
         } catch (e) {
@@ -599,10 +633,6 @@ class Scratch3NeuralNet {
                     transferables.push(payload.weightsBuffer);
                     console.log(`[Extension] Transferring weightsBuffer: ${payload.weightsBuffer.byteLength} bytes`);
                 }
-                if (payload.imageData && payload.imageData.buffer) {
-                    transferables.push(payload.imageData.buffer);
-                    console.log(`[Extension] Transferring imageData: ${payload.imageData.buffer.byteLength} bytes`);
-                }
             }
             this.worker.postMessage({ id, type, payload }, transferables);
         });
@@ -649,7 +679,6 @@ class Scratch3NeuralNet {
                 console.log(`[Extension] Выбрано файлов: ${filesList.length}`);
                 this.isModelLoaded = false;
                 
-                // Показываем начало загрузки
                 const loadingAlert = document.createElement('div');
                 loadingAlert.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;padding:20px;border:2px solid #333;border-radius:8px;z-index:10000;box-shadow:0 4px 6px rgba(0,0,0,0.3);font-family:Arial,sans-serif;text-align:center;';
                 loadingAlert.innerHTML = '<div style="font-size:18px;font-weight:bold;margin-bottom:10px;">Загрузка модели...</div><div id="progress-text" style="font-size:14px;color:#666;">Чтение файлов...</div>';
@@ -769,16 +798,13 @@ class Scratch3NeuralNet {
                     
                     console.log(`[Extension] Модель загружена! Размер входа: ${result.width}x${result.height}`);
                     
-                    // Убираем окно загрузки
                     document.body.removeChild(loadingAlert);
                     
-                    // Показываем успех
                     alert(`Модель успешно загружена!\nРазмер входа: ${result.width}x${result.height} пикселей\nРазмер весов: ${sizeMB} MB`);
 
                 } catch (err) {
                     console.error('[Extension] Ошибка загрузки модели:', err);
                     
-                    // Убираем окно загрузки
                     if (loadingAlert && document.body.contains(loadingAlert)) {
                         document.body.removeChild(loadingAlert);
                     }
@@ -824,6 +850,8 @@ class Scratch3NeuralNet {
     }
 
     _getImageDataSource(source) {
+        console.log(`[Extension] _getImageDataSource вызван для: ${source}`);
+        
         if (source !== 'webcam' && this.runtime.ioDevices.video.videoReady) {
             this.runtime.ioDevices.video.disableVideo();
         }
@@ -831,41 +859,119 @@ class Scratch3NeuralNet {
         switch (source) {
         case 'costume': {
             const target = this.runtime.getEditingTarget();
-            if (!target || !target.sprite || !target.sprite.costumes) return null;
-            const costume = target.sprite.costumes[target.currentCostume];
-            if (!costume) return null;
-            
-            const skinId = costume.skinId;
-            if (skinId && this.runtime.renderer) {
-                const skin = this.runtime.renderer._allSkins[skinId];
-                if (skin && skin._canvas) return skin._canvas;
+            console.log('[Extension] Получение текущего спрайта...');
+            if (!target) {
+                console.error('[Extension] Нет активного спрайта');
+                return null;
             }
+            console.log('[Extension] Спрайт:', target.getName());
+            
+            if (!target.sprite || !target.sprite.costumes) {
+                console.error('[Extension] У спрайта нет костюмов');
+                return null;
+            }
+            
+            const costume = target.sprite.costumes[target.currentCostume];
+            if (!costume) {
+                console.error('[Extension] Костюм не найден');
+                return null;
+            }
+            console.log('[Extension] Текущий костюм:', costume.name);
+            
+            // Сначала пробуем renderer - это самый надёжный способ
+            if (this.runtime.renderer && costume.skinId !== undefined && costume.skinId !== null) {
+                console.log('[Extension] skinId:', costume.skinId);
+                const skin = this.runtime.renderer._allSkins[costume.skinId];
+                if (skin) {
+                    console.log('[Extension] Skin найден');
+                    
+                    // Пробуем разные источники
+                    if (skin._canvas) {
+                        console.log('[Extension] Используем skin._canvas');
+                        return skin._canvas;
+                    }
+                    if (skin._texture) {
+                        if (skin._texture._image) {
+                            console.log('[Extension] Используем skin._texture._image');
+                            return skin._texture._image;
+                        }
+                        if (skin._texture.canvas) {
+                            console.log('[Extension] Используем skin._texture.canvas');
+                            return skin._texture.canvas;
+                        }
+                    }
+                    
+                    // Если есть silhouette (это canvas с изображением костюма)
+                    if (skin._silhouette && skin._silhouette._canvas) {
+                        console.log('[Extension] Используем skin._silhouette._canvas');
+                        return skin._silhouette._canvas;
+                    }
+                }
+            }
+            
+            console.error('[Extension] Не удалось получить изображение костюма');
+            console.error('[Extension] СОВЕТ: Убедитесь что костюм отображается на сцене');
             return null;
         }
         case 'backdrop': {
+            console.log('[Extension] Получение фона сцены...');
             const stage = this.runtime.getTargetForStage();
-            if (!stage || !stage.sprite || !stage.sprite.costumes) return null;
-            const backdrop = stage.sprite.costumes[stage.currentCostume];
-            if (!backdrop) return null;
-            
-            const skinId = backdrop.skinId;
-            if (skinId && this.runtime.renderer) {
-                const skin = this.runtime.renderer._allSkins[skinId];
-                if (skin && skin._canvas) return skin._canvas;
+            if (!stage || !stage.sprite || !stage.sprite.costumes) {
+                console.error('[Extension] Сцена не найдена');
+                return null;
             }
+            const backdrop = stage.sprite.costumes[stage.currentCostume];
+            if (!backdrop) {
+                console.error('[Extension] Фон не найден');
+                return null;
+            }
+            console.log('[Extension] Текущий фон:', backdrop.name);
+            
+            if (this.runtime.renderer && backdrop.skinId !== undefined && backdrop.skinId !== null) {
+                console.log('[Extension] skinId:', backdrop.skinId);
+                const skin = this.runtime.renderer._allSkins[backdrop.skinId];
+                if (skin) {
+                    if (skin._canvas) {
+                        console.log('[Extension] Используем skin._canvas');
+                        return skin._canvas;
+                    }
+                    if (skin._texture) {
+                        if (skin._texture._image) {
+                            console.log('[Extension] Используем skin._texture._image');
+                            return skin._texture._image;
+                        }
+                        if (skin._texture.canvas) {
+                            console.log('[Extension] Используем skin._texture.canvas');
+                            return skin._texture.canvas;
+                        }
+                    }
+                    if (skin._silhouette && skin._silhouette._canvas) {
+                        console.log('[Extension] Используем skin._silhouette._canvas');
+                        return skin._silhouette._canvas;
+                    }
+                }
+            }
+            
+            console.error('[Extension] Не удалось получить изображение фона');
             return null;
         }
         case 'webcam': {
+            console.log('[Extension] Получение кадра с веб-камеры...');
             if (!this.runtime.ioDevices.video.videoReady) {
+                console.log('[Extension] Включаем веб-камеру...');
                 this.runtime.ioDevices.video.enableVideo();
                 return null;
             }
-            return this.runtime.ioDevices.video.getFrame({
+            const frame = this.runtime.ioDevices.video.getFrame({
                 format: 'canvas',
                 dimensions: [this._modelInputWidth, this._modelInputHeight]
             });
+            console.log('[Extension] Кадр получен:', frame ? 'да' : 'нет');
+            return frame;
         }
-        default: return null;
+        default: 
+            console.error(`[Extension] Неизвестный источник: ${source}`);
+            return null;
         }
     }
 
@@ -894,34 +1000,97 @@ class Scratch3NeuralNet {
         }
         
         console.log('[Extension] Источник получен, изменение размера...');
+        console.log('[Extension] Тип источника:', imageSource.constructor.name);
+        console.log('[Extension] Размеры источника:', imageSource.width, 'x', imageSource.height);
 
         if (this._canvas.width !== w || this._canvas.height !== h) {
             this._canvas.width = w;
             this._canvas.height = h;
         }
-        this._ctx.drawImage(imageSource, 0, 0, w, h);
+        
+        try {
+            // Очищаем canvas перед рисованием
+            this._ctx.clearRect(0, 0, w, h);
+            
+            // Рисуем с белым фоном для прозрачных изображений
+            this._ctx.fillStyle = 'white';
+            this._ctx.fillRect(0, 0, w, h);
+            
+            this._ctx.drawImage(imageSource, 0, 0, w, h);
+            
+            // ОТЛАДКА: Показываем что рисуем (временно, для проверки)
+            console.log('[Extension] Отрисованное изображение:', this._canvas.toDataURL().substring(0, 100) + '...');
+            
+        } catch (e) {
+            console.error('[Extension] Ошибка при отрисовке изображения:', e);
+            return 0;
+        }
+        
         const imageData = this._ctx.getImageData(0, 0, w, h);
         
         console.log(`[Extension] ImageData готов: ${w}x${h}, ${imageData.data.length} байт`);
+        
+        // Статистика по пикселям
+        let sumR = 0, sumG = 0, sumB = 0, countNonZero = 0;
+        for (let i = 0; i < imageData.data.length; i += 4) {
+            sumR += imageData.data[i];
+            sumG += imageData.data[i + 1];
+            sumB += imageData.data[i + 2];
+            if (imageData.data[i] > 0 || imageData.data[i + 1] > 0 || imageData.data[i + 2] > 0) {
+                countNonZero++;
+            }
+        }
+        const totalPixels = imageData.data.length / 4;
+        const avgR = (sumR / totalPixels).toFixed(2);
+        const avgG = (sumG / totalPixels).toFixed(2);
+        const avgB = (sumB / totalPixels).toFixed(2);
+        
+        console.log('[Extension] Статистика пикселей:');
+        console.log(`[Extension]   Средний R: ${avgR}, G: ${avgG}, B: ${avgB}`);
+        console.log(`[Extension]   Не-чёрных пикселей: ${countNonZero}/${totalPixels} (${(countNonZero/totalPixels*100).toFixed(1)}%)`);
+        console.log('[Extension] Первые 20 значений:', Array.from(imageData.data.slice(0, 20)));
+        
+        if (countNonZero === 0) {
+            console.error('[Extension] ВНИМАНИЕ: Изображение полностью чёрное! Проверьте источник.');
+        }
+        
+        const imageDataCopy = new Uint8ClampedArray(imageData.data);
+        console.log('[Extension] Создана копия imageData для передачи в Worker');
 
         try {
             const probsData = await this.postToWorker('predict', {
-                imageData: imageData.data, 
+                imageData: imageDataCopy,
                 width: w,
                 height: h
             });
             
             this.lastProbabilities = probsData;
+            
+            if (!probsData || probsData.length === 0) {
+                console.error('[Extension] Получен пустой массив вероятностей');
+                return 0;
+            }
+            
             const predictedIndex = probsData.indexOf(Math.max(...probsData));
             const confidence = (probsData[predictedIndex] * 100).toFixed(2);
             
-            console.log(`[Extension] Предсказание: класс ${predictedIndex + 1}, уверенность ${confidence}%`);
-            console.log('[Extension] Все вероятности:', probsData.map((p, i) => `${i + 1}: ${(p * 100).toFixed(2)}%`).join(', '));
+            console.log('[Extension] ============ РЕЗУЛЬТАТ ============');
+            console.log(`[Extension] Предсказанный класс: ${predictedIndex + 1}`);
+            console.log(`[Extension] Уверенность: ${confidence}%`);
+            console.log('[Extension] Все вероятности:');
+            probsData.forEach((p, i) => {
+                const percent = (p * 100).toFixed(2);
+                const barLength = Math.floor(p * 50);
+                const bar = '█'.repeat(barLength);
+                console.log(`[Extension]   Класс ${i + 1}: ${percent}% ${bar}`);
+            });
+            console.log('[Extension] =====================================');
             
             return predictedIndex + 1;
 
         } catch (err) {
             console.error('[Extension] Ошибка предсказания:', err);
+            console.error('[Extension] Stack:', err.stack);
             return 0;
         }
     }
